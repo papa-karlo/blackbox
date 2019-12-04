@@ -2,13 +2,14 @@
 // ----------- main.c -----------------
 // Test application for RPi 4 UART to 485 data transfer
 //
-// By Papa Karlo Software, 2019
+// By PapaKarlo Software, 2019
 //
 // ---------------------------------------------
 
 #include <stdio.h>
 #include <string.h>
 #include <stdint.h>
+#include <stdlib.h>
 #include <pthread.h>		
 #include <unistd.h>			//Used for UART
 #include <fcntl.h>			//Used for UART
@@ -20,11 +21,12 @@
 
 #include "crc16.h"
 
-//Buffer for incoming physical-layer messages (PL-messages)
-uint8_t		rx_buf[254];
-
-//Index into the buffer
-uint32_t	rx_i;
+// variables
+uint8_t		rx_buf[254];	//Buffer for incoming physical-layer messages (PL-messages)
+uint32_t	rx_i;			//Index into the buffer
+int verbose_flag = 0;
+int uart_id = 3;
+int		fd;					// UART HANDLE
 
 
 
@@ -121,19 +123,45 @@ int receive(int fd, uint8_t *dst_adr, uint8_t *size)
 	return 0;
 }
 
-int main()
+void	print_usage(void)
+{
+	printf("\n");
+	printf("Usage: -h, -H, -?            -- this message\n");
+	printf("       -d<DD>, -D<DD>        -- main SRIO Device ID DD(hex-8bit)\n");
+	printf("       -u<N>, -U<N>          -- UART number N (dec) (default = 3)\n");
+	printf("       -v, -V                -- verbose\n");
+}
+
+int main(int argc, char *argv[])
 {
 
-	wiringPiSetupGpio();
-	pinMode(19, OUTPUT);	// DE for 485 UART3
-	pinMode(26, OUTPUT);	// DE for 485 UART5
-	digitalWrite(19, LOW);  // Off
-	digitalWrite(26, LOW);  // Off
+	printf("\n");
+	printf("================ RPi4 UART EXAMPLE ======================= \n");
+	printf("======== (C) PapaKarlo Software, Dec. 2019) ================= \n");
+	printf("============================================================= \n");
 
-	// Open serial UART3 & UART5
+	for (int i = 0; i < argc; i++)
+	{
+		if (argv[i][0] == '-')
+		{
+			switch (argv[i][1]) {
+			case 'v':
+			case 'V':	verbose_flag = 1; break;
+			case 'u':
+			case 'U':	uart_id = atol(&argv[i][2]); break;
+			case 'h':
+			case 'H':
+			case '?':	print_usage(); return 0;
+			}
+		}
+	}
+
+	// Open serial UART N
 	// 8-N-1, 1000000 Hz
-	int fd0 = serialOpen("//dev//ttyAMA1", 1000000);
-	int fd1 = serialOpen("//dev//ttyAMA2", 1000000);
+	if (uart_id == 3)		fd = serialOpen("//dev//ttyAMA1", 1000000);
+	else if (uart_id == 5)	fd = serialOpen("//dev//ttyAMA2", 1000000);
+
+	printf("Use UART%d\n", uart_id);
 
 	for (int loop = 1;; loop++)
 	{
@@ -141,7 +169,7 @@ int main()
 		uint8_t	data_in[256];
 		uint8_t	data_out[256];
 
-		serialFlush(fd0);
+		serialFlush(fd);
 	
 		int	ok_counter = 0;
 		int	bad_counter = 0;
@@ -155,12 +183,12 @@ int main()
 			data_out[1] = 0x01;
 			data_out[2] = 0x02;
 			data_out[3] = 0x03;
-			transmit(fd0, data_out, 4);
+			transmit(fd, data_out, 4);
 			piUnlock(1);
 
 			for (ii = 0; ii < 100; ii++) {
 				delayMicroseconds(1000);
-				if (serialDataAvail(fd0)) break;
+				if (serialDataAvail(fd)) break;
 			}
 			if (100 == ii) {
 				printf("###ERROR: Can't get received data\n");
@@ -170,7 +198,7 @@ int main()
 
 			piLock(1);
 			uint8_t	ret_size = 0;
-			receive(fd0, data_in, &ret_size);
+			receive(fd, data_in, &ret_size);
 			for (ii = 0; ii < ret_size; ii++) {
 				printf("RECV: %d  ", data_in[ii] );
 			}
@@ -178,8 +206,7 @@ int main()
 		}
 
 	}
-	serialClose(fd0);
-	serialClose(fd1);
+	serialClose(fd);
 
 	return 0;
 }
